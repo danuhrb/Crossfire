@@ -1,12 +1,3 @@
-"""
-Cloudflare traffic and attack data ingestion.
-
-Fetches analytics from the Cloudflare API including:
-- HTTP request traffic trends (time series)
-- Firewall events (attack spikes, WAF triggers)
-- Top attacking IPs and their metadata
-"""
-
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
@@ -62,10 +53,7 @@ class CloudflareFetcher:
                 raise RuntimeError(f"Cloudflare GraphQL errors: {data['errors']}")
             return data["data"]
 
-    async def fetch_traffic_timeseries(
-        self, minutes_back: int = 30
-    ) -> list[dict]:
-        """Fetch HTTP request counts bucketed by minute."""
+    async def fetch_traffic_timeseries(self, minutes_back: int = 30) -> list[dict]:
         since = datetime.now(timezone.utc) - timedelta(minutes=minutes_back)
         since_str = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -106,7 +94,6 @@ class CloudflareFetcher:
     async def fetch_firewall_events(
         self, minutes_back: int = 15, limit: int = 500
     ) -> list[dict]:
-        """Fetch recent firewall / WAF events indicating attacks."""
         since = datetime.now(timezone.utc) - timedelta(minutes=minutes_back)
         since_str = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -148,10 +135,21 @@ class CloudflareFetcher:
         logger.info(f"Fetched {len(events)} firewall events from last {minutes_back}m")
         return events
 
+    """
+    WHAT IT DOES
+    Aggregates firewall events by IP, ranks them by hit count, and returns the top N.
+
+    HOW IT DOES IT
+    Single pass over events to build per-IP counters (hits, actions, timestamps),
+    then sorts descending by hit_count and slices to top_n.
+
+    WHY I DID IT THIS WAY
+    Avoids repeated iteration or groupby overhead — one dict accumulation pass
+    is O(n) and keeps memory flat since we only store unique IPs.
+    """
     async def get_top_attacking_ips(
         self, minutes_back: int = 60, top_n: int = 50
     ) -> list[dict]:
-        """Extract top N attacking IPs from firewall events."""
         events = await self.fetch_firewall_events(minutes_back=minutes_back, limit=2000)
 
         ip_counts: dict[str, dict] = {}
@@ -183,13 +181,21 @@ class CloudflareFetcher:
 
         return ranked
 
+    """
+    WHAT IT DOES
+    Compares the last 5 minutes of traffic against the rolling average to flag spikes.
+
+    HOW IT DOES IT
+    Pulls per-minute request counts, splits into historical window vs recent tail,
+    and checks if the recent average exceeds the historical by threshold_multiplier.
+
+    WHY I DID IT THIS WAY
+    Simple ratio-based detection is cheap to compute on every poll cycle and
+    avoids maintaining persistent state between runs.
+    """
     async def detect_attack_spike(
         self, threshold_multiplier: float = 3.0, window_minutes: int = 30
     ) -> dict:
-        """
-        Detect if current traffic represents a spike relative
-        to the rolling average over the window.
-        """
         ts = await self.fetch_traffic_timeseries(minutes_back=window_minutes)
         if len(ts) < 5:
             return {"is_spike": False, "reason": "insufficient data"}
@@ -210,7 +216,6 @@ class CloudflareFetcher:
 
 
 async def poll_cloudflare(interval_sec: int = 300):
-    """Long-running poller for Cloudflare data."""
     fetcher = CloudflareFetcher()
     try:
         while True:

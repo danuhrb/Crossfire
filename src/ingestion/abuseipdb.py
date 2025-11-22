@@ -1,10 +1,3 @@
-"""
-AbuseIPDB integration for IP reputation lookups.
-
-Fetches blacklisted IPs and enriches individual IPs
-with abuse confidence scores and report metadata.
-"""
-
 import logging
 from typing import Optional
 
@@ -39,10 +32,6 @@ class AbuseIPDBClient:
             await self._session.close()
 
     async def check_ip(self, ip: str, max_age_days: int = 90) -> dict:
-        """
-        Check a single IP against AbuseIPDB.
-        Returns abuse confidence score, country, ISP, etc.
-        """
         session = await self._get_session()
         params = {"ipAddress": ip, "maxAgeInDays": max_age_days, "verbose": ""}
 
@@ -75,7 +64,6 @@ class AbuseIPDBClient:
     async def get_blacklist(
         self, confidence_minimum: int = 90, limit: int = 500
     ) -> list[dict]:
-        """Fetch the AbuseIPDB blacklist - IPs with highest abuse scores."""
         session = await self._get_session()
         params = {
             "confidenceMinimum": confidence_minimum,
@@ -107,7 +95,6 @@ class AbuseIPDBClient:
             ]
 
     async def enrich_ips(self, ips: list[str]) -> list[dict]:
-        """Batch-enrich a list of IPs with abuse data."""
         results = []
         for ip in ips:
             result = await self.check_ip(ip)
