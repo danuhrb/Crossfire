@@ -1,20 +1,3 @@
-"""
-PyTorch DDoS confidence classifier.
-
-Binary classifier that takes IP behavioral features and outputs
-a confidence score for whether the IP is participating in a DDoS attack.
-
-Features:
-- Request rate (reqs/min)
-- Unique paths targeted
-- HTTP method distribution entropy
-- Firewall action counts (block, challenge, js_challenge)
-- AbuseIPDB confidence score
-- Is TOR exit node
-- Geographic anomaly score
-- Time-of-day encoding
-"""
-
 import os
 import logging
 from datetime import datetime
@@ -32,8 +15,6 @@ FEATURE_DIM = 12
 
 
 class DDoSFeatureDataset(Dataset):
-    """Dataset for IP feature vectors with DDoS labels."""
-
     def __init__(self, features: np.ndarray, labels: np.ndarray = None):
         self.features = torch.FloatTensor(features)
         self.labels = torch.FloatTensor(labels) if labels is not None else None
@@ -49,13 +30,10 @@ class DDoSFeatureDataset(Dataset):
 
 class DDoSClassifier(nn.Module):
     """
-    Feedforward network for DDoS IP classification.
-
-    Architecture:
-        Input (12) -> FC(64) -> ReLU -> Dropout
-        -> FC(32) -> ReLU -> Dropout
-        -> FC(16) -> ReLU
-        -> FC(1) -> Sigmoid
+    Input (12) -> FC(64) -> ReLU -> BN -> Dropout
+    -> FC(32) -> ReLU -> BN -> Dropout
+    -> FC(16) -> ReLU
+    -> FC(1) -> Sigmoid
     """
 
     def __init__(self, input_dim: int = FEATURE_DIM, dropout: float = 0.3):
@@ -81,8 +59,6 @@ class DDoSClassifier(nn.Module):
 
 
 class DDoSModelTrainer:
-    """Training and inference wrapper for the DDoS classifier."""
-
     def __init__(
         self,
         model: DDoSClassifier = None,
@@ -205,7 +181,6 @@ class DDoSModelTrainer:
 
     @torch.no_grad()
     def predict(self, features: np.ndarray) -> np.ndarray:
-        """Return DDoS confidence scores for a batch of feature vectors."""
         self.model.eval()
         x = torch.FloatTensor(features).to(self.device)
         scores = self.model(x).cpu().numpy()
@@ -214,7 +189,6 @@ class DDoSModelTrainer:
     def classify(
         self, features: np.ndarray, threshold: float = None
     ) -> list[dict]:
-        """Classify IPs and return those above the confidence threshold."""
         threshold = threshold or CONFIDENCE_THRESHOLD
         scores = self.predict(features)
         results = []

@@ -1,10 +1,3 @@
-"""
-Feature extraction pipeline.
-
-Transforms raw Cloudflare firewall events + AbuseIPDB enrichment
-into feature vectors for the DDoS classifier.
-"""
-
 import math
 import logging
 from collections import Counter
@@ -16,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 def compute_entropy(counts: list[int]) -> float:
-    """Shannon entropy of a frequency distribution."""
     total = sum(counts)
     if total == 0:
         return 0.0
@@ -25,7 +17,6 @@ def compute_entropy(counts: list[int]) -> float:
 
 
 def encode_time_of_day(timestamp_str: str) -> tuple[float, float]:
-    """Cyclical encoding of hour-of-day as (sin, cos) pair."""
     try:
         dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
         hour = dt.hour + dt.minute / 60
@@ -35,29 +26,25 @@ def encode_time_of_day(timestamp_str: str) -> tuple[float, float]:
     return math.sin(angle), math.cos(angle)
 
 
+"""
+WHAT IT DOES
+Builds a 12-dim feature vector for a single IP from firewall events and abuse reputation.
+
+HOW IT DOES IT
+Filters events to the target IP, computes behavioral signals (request rate, path diversity,
+method entropy, WAF action counts), merges in AbuseIPDB reputation fields, and encodes
+the timestamp cyclically to avoid midnight discontinuity.
+
+WHY I DID IT THIS WAY
+All features are derivable from raw event dicts without preprocessing — keeps the pipeline
+stateless so it can run per-poll-cycle without accumulating history.
+"""
 def extract_ip_features(
     ip: str,
     firewall_events: list[dict],
     abuse_data: dict,
     time_window_minutes: int = 15,
 ) -> np.ndarray:
-    """
-    Build a feature vector for a single IP.
-
-    Features (12-dim):
-        0: request_rate (events per minute)
-        1: unique_paths (number of distinct paths targeted)
-        2: method_entropy (HTTP method distribution entropy)
-        3: block_count (times blocked by WAF)
-        4: challenge_count (times challenged)
-        5: js_challenge_count
-        6: abuse_score (AbuseIPDB confidence 0-100, normalized)
-        7: total_reports (AbuseIPDB, log-scaled)
-        8: is_tor (binary)
-        9: geo_anomaly (placeholder - 0.0 for now)
-        10: time_sin (cyclical hour encoding)
-        11: time_cos (cyclical hour encoding)
-    """
     ip_events = [e for e in firewall_events if e.get("clientIP") == ip]
 
     request_rate = len(ip_events) / max(time_window_minutes, 1)
@@ -105,12 +92,6 @@ def build_feature_matrix(
     abuse_map: dict[str, dict],
     time_window_minutes: int = 15,
 ) -> tuple[list[str], np.ndarray]:
-    """
-    Build feature matrix for a batch of IPs.
-
-    Returns:
-        (ip_list, feature_matrix) where feature_matrix is (N, 12)
-    """
     valid_ips = []
     feature_rows = []
 

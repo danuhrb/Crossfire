@@ -11,5 +11,4 @@ FETCH_INTERVAL_SEC = 300
 CONFIDENCE_THRESHOLD = 0.85
 
 GEOIP_DB_PATH = os.getenv("GEOIP_DB_PATH", "data/GeoLite2-City.mmdb")
-
 MODEL_CHECKPOINT_DIR = "models/checkpoints"
