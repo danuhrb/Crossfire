@@ -1,15 +1,17 @@
 """
-IP to geographic coordinate resolution using MaxMind GeoLite2.
+IP to geographic coordinate resolution.
+
+Supports two backends:
+- MaxMind GeoLite2 (offline, fast, requires .mmdb file)
+- ip-api.com (online, free, no key needed, 100 IPs/batch, 45 req/min)
 """
 
 import logging
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, asdict
 from typing import Optional
 
-import geoip2.database
-import geoip2.errors
-
-from config import GEOIP_DB_PATH
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
@@ -23,25 +25,33 @@ class GeoResult:
     country: Optional[str] = None
     country_code: Optional[str] = None
 
+    def to_dict(self) -> dict:
+        return asdict(self)
+
 
 class GeoResolver:
+    """Resolves IPs to coordinates. Uses MaxMind if available, otherwise ip-api.com."""
+
     def __init__(self, db_path: str = None):
+        from config import GEOIP_DB_PATH
         self.db_path = db_path or GEOIP_DB_PATH
         self._reader = None
+        self._use_maxmind = os.path.exists(self.db_path)
 
-    def _get_reader(self) -> geoip2.database.Reader:
-        if self._reader is None:
+        if self._use_maxmind:
+            import geoip2.database
             self._reader = geoip2.database.Reader(self.db_path)
-        return self._reader
+            logger.info(f"Using MaxMind GeoLite2 at {self.db_path}")
+        else:
+            logger.info("MaxMind DB not found, using ip-api.com fallback")
 
-    def resolve(self, ip: str) -> Optional[GeoResult]:
+    def _resolve_maxmind(self, ip: str) -> Optional[GeoResult]:
+        import geoip2.errors
         try:
-            reader = self._get_reader()
-            resp = reader.city(ip)
+            resp = self._reader.city(ip)
             loc = resp.location
             if loc.latitude is None or loc.longitude is None:
                 return None
-
             return GeoResult(
                 ip=ip,
                 latitude=loc.latitude,
@@ -51,15 +61,64 @@ class GeoResolver:
                 country_code=resp.country.iso_code,
             )
         except (geoip2.errors.AddressNotFoundError, ValueError):
-            logger.debug(f"No geo data for {ip}")
             return None
 
-    def resolve_batch(self, ips: list[str]) -> list[GeoResult]:
+    def resolve(self, ip: str) -> Optional[GeoResult]:
+        if self._use_maxmind:
+            return self._resolve_maxmind(ip)
+        return None
+
+    async def resolve_batch_async(self, ips: list[str]) -> list[GeoResult]:
+        """
+        Resolve a batch of IPs asynchronously.
+        Uses ip-api.com batch endpoint (up to 100 per request) when
+        MaxMind is unavailable.
+        """
+        if self._use_maxmind:
+            results = []
+            for ip in ips:
+                geo = self._resolve_maxmind(ip)
+                if geo:
+                    results.append(geo)
+            return results
+
+        return await self._batch_ip_api(ips)
+
+    async def _batch_ip_api(self, ips: list[str]) -> list[GeoResult]:
+        """Batch resolve via ip-api.com (100 IPs per request, free, no key)."""
         results = []
-        for ip in ips:
-            geo = self.resolve(ip)
-            if geo:
-                results.append(geo)
+        chunks = [ips[i:i+100] for i in range(0, len(ips), 100)]
+
+        async with aiohttp.ClientSession() as session:
+            for chunk in chunks:
+                payload = [
+                    {"query": ip, "fields": "query,lat,lon,city,country,countryCode,status"}
+                    for ip in chunk
+                ]
+                try:
+                    async with session.post(
+                        "http://ip-api.com/batch?fields=query,lat,lon,city,country,countryCode,status",
+                        json=payload,
+                    ) as resp:
+                        if resp.status != 200:
+                            logger.error(f"ip-api batch returned {resp.status}")
+                            continue
+                        data = await resp.json()
+                        for entry in data:
+                            if entry.get("status") != "success":
+                                continue
+                            results.append(GeoResult(
+                                ip=entry["query"],
+                                latitude=entry["lat"],
+                                longitude=entry["lon"],
+                                city=entry.get("city"),
+                                country=entry.get("country"),
+                                country_code=entry.get("countryCode"),
+                            ))
+                except Exception as e:
+                    logger.error(f"ip-api batch request failed: {e}")
+
+        logger.info(f"Resolved {len(results)}/{len(ips)} IPs to coordinates")
         return results
 
     def close(self):
