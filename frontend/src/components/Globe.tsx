@@ -1,120 +1,92 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import createGlobe from "cobe";
 
-interface AttackArc {
-  startLat: number;
-  startLng: number;
-  endLat: number;
-  endLng: number;
-  color: [number, number, number];
+export interface Marker {
+  lat: number;
+  lng: number;
+  size: number;
 }
 
 interface GlobeProps {
-  attacks: AttackArc[];
-  width?: number;
-  height?: number;
-  targetLat?: number;
-  targetLng?: number;
+  markers: Marker[];
+  className?: string;
 }
 
-export default function Globe({
-  attacks,
-  width = 800,
-  height = 800,
-  targetLat = 39.8283,
-  targetLng = -98.5795,
-}: GlobeProps) {
+export default function Globe({ markers, className }: GlobeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pointerInteracting = useRef<number | null>(null);
-  const pointerInteractionMovement = useRef(0);
-  const [rotation, setRotation] = useState(0);
-
-  const arcsData = useCallback(() => {
-    return attacks.map((a) => ({
-      startLat: a.startLat,
-      startLng: a.startLng,
-      endLat: a.endLat,
-      endLng: a.endLng,
-      arcAlt: 0.3,
-      color: a.color,
-    }));
-  }, [attacks]);
+  const pointerMovement = useRef(0);
+  const phiRef = useRef(0);
+  const widthRef = useRef(0);
 
   useEffect(() => {
-    let phi = 0;
-    let currentWidth = width;
-
     if (!canvasRef.current) return;
+
+    const onResize = () => {
+      if (canvasRef.current) {
+        widthRef.current = canvasRef.current.offsetWidth;
+      }
+    };
+    window.addEventListener("resize", onResize);
+    onResize();
 
     const globe = createGlobe(canvasRef.current, {
       devicePixelRatio: 2,
-      width: currentWidth * 2,
-      height: height * 2,
+      width: widthRef.current * 2,
+      height: widthRef.current * 2,
       phi: 0,
-      theta: 0.3,
+      theta: 0.25,
       dark: 1,
       diffuse: 1.2,
-      mapSamples: 16000,
-      mapBrightness: 6,
-      baseColor: [0.1, 0.1, 0.1],
-      markerColor: [1, 0.2, 0.2],
-      glowColor: [0.05, 0.05, 0.15],
-      markers: attacks.map((a) => ({
-        location: [a.startLat, a.startLng],
-        size: 0.06,
+      mapSamples: 20000,
+      mapBrightness: 4,
+      baseColor: [0.12, 0.12, 0.14],
+      markerColor: [0.9, 0.15, 0.15],
+      glowColor: [0.08, 0.03, 0.06],
+      markers: markers.map((m) => ({
+        location: [m.lat, m.lng] as [number, number],
+        size: m.size,
       })),
       onRender: (state) => {
         if (!pointerInteracting.current) {
-          phi += 0.003;
+          phiRef.current += 0.002;
         }
-        state.phi = phi + rotation;
-        state.width = currentWidth * 2;
-        state.height = height * 2;
+        state.phi = phiRef.current + pointerMovement.current / 200;
+        state.width = widthRef.current * 2;
+        state.height = widthRef.current * 2;
       },
     });
 
     return () => {
       globe.destroy();
+      window.removeEventListener("resize", onResize);
     };
-  }, [attacks, width, height, rotation]);
+  }, [markers]);
 
   return (
-    <div className="relative flex items-center justify-center">
-      <canvas
-        ref={canvasRef}
-        style={{
-          width: `${width}px`,
-          height: `${height}px`,
-          cursor: "grab",
-          maxWidth: "100%",
-          aspectRatio: "1",
-        }}
-        onPointerDown={(e) => {
-          pointerInteracting.current =
-            e.clientX - pointerInteractionMovement.current;
-          if (canvasRef.current) canvasRef.current.style.cursor = "grabbing";
-        }}
-        onPointerUp={() => {
-          pointerInteracting.current = null;
-          if (canvasRef.current) canvasRef.current.style.cursor = "grab";
-        }}
-        onPointerOut={() => {
-          pointerInteracting.current = null;
-          if (canvasRef.current) canvasRef.current.style.cursor = "grab";
-        }}
-        onPointerMove={(e) => {
-          if (pointerInteracting.current !== null) {
-            const delta = e.clientX - pointerInteracting.current;
-            pointerInteractionMovement.current = delta;
-            setRotation(delta / 200);
-          }
-        }}
-      />
-      <div className="absolute bottom-4 left-4 text-xs text-zinc-500 font-mono">
-        {attacks.length} active sources
-      </div>
-    </div>
+    <canvas
+      ref={canvasRef}
+      className={className}
+      style={{ width: "100%", aspectRatio: "1", cursor: "grab" }}
+      onPointerDown={(e) => {
+        pointerInteracting.current = e.clientX - pointerMovement.current;
+        if (canvasRef.current) canvasRef.current.style.cursor = "grabbing";
+      }}
+      onPointerUp={() => {
+        pointerInteracting.current = null;
+        if (canvasRef.current) canvasRef.current.style.cursor = "grab";
+      }}
+      onPointerOut={() => {
+        pointerInteracting.current = null;
+        if (canvasRef.current) canvasRef.current.style.cursor = "grab";
+      }}
+      onPointerMove={(e) => {
+        if (pointerInteracting.current !== null) {
+          pointerMovement.current = e.clientX - pointerInteracting.current;
+        }
+      }}
+    />
   );
 }
