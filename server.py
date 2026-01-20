@@ -1,10 +1,3 @@
-"""
-Crossfire API server.
-
-Serves live DDoS attack data to the frontend globe.
-Polls AbuseIPDB periodically and caches geo-resolved results.
-"""
-
 import asyncio
 import logging
 import time
@@ -33,7 +26,6 @@ _poll_task = None
 
 
 async def poll_attacks():
-    """Background task: fetch blacklist + resolve geo on a loop."""
     client = AbuseIPDBClient()
     geo = GeoResolver()
 

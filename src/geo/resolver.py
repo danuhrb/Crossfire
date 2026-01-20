@@ -1,11 +1,3 @@
-"""
-IP to geographic coordinate resolution.
-
-Supports two backends:
-- MaxMind GeoLite2 (offline, fast, requires .mmdb file)
-- ip-api.com (online, free, no key needed, 100 IPs/batch, 45 req/min)
-"""
-
 import logging
 import os
 from dataclasses import dataclass, asdict
@@ -30,8 +22,6 @@ class GeoResult:
 
 
 class GeoResolver:
-    """Resolves IPs to coordinates. Uses MaxMind if available, otherwise ip-api.com."""
-
     def __init__(self, db_path: str = None):
         from config import GEOIP_DB_PATH
         self.db_path = db_path or GEOIP_DB_PATH
@@ -69,11 +59,6 @@ class GeoResolver:
         return None
 
     async def resolve_batch_async(self, ips: list[str]) -> list[GeoResult]:
-        """
-        Resolve a batch of IPs asynchronously.
-        Uses ip-api.com batch endpoint (up to 100 per request) when
-        MaxMind is unavailable.
-        """
         if self._use_maxmind:
             results = []
             for ip in ips:
@@ -84,8 +69,19 @@ class GeoResolver:
 
         return await self._batch_ip_api(ips)
 
+    """
+    WHAT IT DOES
+    Resolves a list of IPs to lat/lng via ip-api.com's batch endpoint.
+
+    HOW IT DOES IT
+    Chunks the IP list into groups of 100 (api limit per request), POSTs each
+    chunk to ip-api.com/batch, and collects successful responses into GeoResults.
+
+    WHY I DID IT THIS WAY
+    ip-api.com is free with no key required — serves as a zero-config fallback
+    when the MaxMind .mmdb file isn't downloaded yet.
+    """
     async def _batch_ip_api(self, ips: list[str]) -> list[GeoResult]:
-        """Batch resolve via ip-api.com (100 IPs per request, free, no key)."""
         results = []
         chunks = [ips[i:i+100] for i in range(0, len(ips), 100)]
 

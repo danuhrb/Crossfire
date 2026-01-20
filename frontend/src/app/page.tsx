@@ -16,7 +16,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-lg bg-red-500/10 flex items-center justify-center">
@@ -38,14 +37,11 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Stats */}
       <div className="px-6 py-4">
         <StatsBar attacks={attacks} lastUpdated={lastUpdated} />
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col lg:flex-row gap-0 lg:gap-0 px-6 pb-6">
-        {/* Globe */}
         <div className="flex-1 flex items-center justify-center relative min-h-[400px]">
           {loading && attacks.length === 0 ? (
             <div className="flex flex-col items-center gap-3">
@@ -59,7 +55,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* Attack Feed */}
         <div className="w-full lg:w-80 xl:w-96 border border-zinc-800 rounded-lg bg-zinc-900/30 max-h-[600px] overflow-hidden flex flex-col">
           <AttackFeed attacks={attacks} />
         </div>
