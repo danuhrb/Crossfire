@@ -45,6 +45,3 @@ frontend/
     ├── components/  # Globe, AttackFeed, StatsBar
     └── hooks/       # Data fetching hooks
 ```
-
----
-frontend by claude
