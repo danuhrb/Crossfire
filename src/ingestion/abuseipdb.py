@@ -100,3 +100,78 @@ class AbuseIPDBClient:
             result = await self.check_ip(ip)
             results.append(result)
         return results
+
+    CATEGORY_DDOS = 4
+
+    async def report_ip(
+        self,
+        ip: str,
+        categories: list[int] = None,
+        comment: str = "",
+    ) -> dict:
+        session = await self._get_session()
+        payload = {
+            "ip": ip,
+            "categories": ",".join(str(c) for c in (categories or [self.CATEGORY_DDOS])),
+            "comment": comment,
+        }
+
+        async with session.post(
+            f"{ABUSEIPDB_BASE}/report", data=payload
+        ) as resp:
+            if resp.status == 429:
+                logger.warning("AbuseIPDB rate limit hit during report")
+                return {"ip": ip, "error": "rate_limited"}
+            if resp.status != 200:
+                body = await resp.text()
+                logger.error(f"AbuseIPDB report error {resp.status}: {body}")
+                return {"ip": ip, "error": f"status_{resp.status}"}
+
+            data = await resp.json()
+            result = data.get("data", {})
+            logger.info(
+                f"Reported {ip} — new score: {result.get('abuseConfidenceScore')}"
+            )
+            return {
+                "ip": result.get("ipAddress", ip),
+                "abuse_score": result.get("abuseConfidenceScore", 0),
+            }
+
+    """
+    WHAT IT DOES
+    Takes a list of model-flagged IPs with their confidence scores and reports
+    each one to AbuseIPDB with the DDoS category and a generated comment.
+
+    HOW IT DOES IT
+    Iterates over flagged IPs, skips any below the confidence floor, builds a
+    comment string with the model confidence, and calls the report endpoint
+    sequentially to stay within rate limits.
+
+    WHY I DID IT THIS WAY
+    Sequential reporting avoids hammering the API and getting 429'd. The confidence
+    floor prevents low-signal IPs from polluting the AbuseIPDB database with
+    false positives from an untrained or poorly calibrated model.
+    """
+    async def report_flagged_ips(
+        self,
+        flagged: list[dict],
+        confidence_floor: float = 0.90,
+    ) -> list[dict]:
+        results = []
+        for entry in flagged:
+            ip = entry.get("ip")
+            confidence = entry.get("confidence", 0)
+            if not ip or confidence < confidence_floor:
+                continue
+
+            comment = (
+                f"Crossfire DDoS classifier flagged this IP with "
+                f"{confidence:.1%} confidence"
+            )
+            result = await self.report_ip(ip, comment=comment)
+            results.append(result)
+
+        logger.info(
+            f"Reported {len(results)}/{len(flagged)} flagged IPs to AbuseIPDB"
+        )
+        return results
